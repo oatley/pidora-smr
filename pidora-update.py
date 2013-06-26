@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # Andrew Oatley-Willis
 # Multi-purpose tool written in python for linux
-# This script will allow for a single safeguarded process to run: sigulsign_unsigned, mash-pidora, and rsync to pidora.ca
-# It will do a sanity check on everything that is happening and hopefully prevent manual errors that could occur
-# Because I'm running subprocess here, now this script can only be run by root on japan
+# This script will allow for a single safeguarded process to run: sigul, mash, and rsync to pidora.ca
+# It will do a sanity check on everything that is happening and prevent manual errors that could occur
+# Every configuration is customizable on the command line with well named options
 import optparse
 import pysftp
 import sys
@@ -24,6 +24,7 @@ class tools:
         rsyncuser = "pidorapr"
         mashdir = "/usr/local/bin/mash-pidora"
         kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
+
         # Create command line options
         parser = optparse.OptionParser()
         parser = optparse.OptionParser(usage='Usage: %prog [options]')
@@ -32,7 +33,7 @@ class tools:
         parser.add_option('-s', '--sign',  help='sign all packages in listed tag', dest='sign', default=False, action='store_true')
         parser.add_option('-m', '--mash',  help='start a mash run', dest='mash', default=False, action='store_true')
         parser.add_option('-r', '--rync',  help='perform a rsync of the mash repos', dest='rsync', default=False, action='store_true')
-        parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms, requires option --koji-tag', dest='listunsigned', default=False, action='store_true')
+        parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms', dest='listunsigned', default=False, action='store_true')
         parser.add_option('--koji-tag',  help='specify the koji tag to sign', dest='kojitag', default=False, action='store')
         parser.add_option('--sigul-user',  help='specify the user for sigul', dest='siguluser', default=siguluser, action='store', metavar=siguluser)
         parser.add_option('--sigul-host',  help='specify the host for sigul', dest='sigulhost', default=sigulhost, action='store', metavar=sigulhost)
@@ -41,6 +42,7 @@ class tools:
         parser.add_option('--rsync-user',  help='specify the user for rsync', dest='rsyncuser', default=rsyncuser, action='store', metavar=rsyncuser)
         parser.add_option('--rsync-host',  help='specify the host for rsync', dest='rsynchost', default=rsynchost, action='store', metavar=rsynchost)
         (opts, args) = parser.parse_args()
+
         # Check number of arguments and check for option switches
         if len(sys.argv[1:]) == 0:
             parser.print_help()
@@ -59,19 +61,20 @@ class tools:
             mashuser = opts.mashuser
         if opts.rsyncuser:
             rsyncuser = opts.rsyncuser
+
         # Create lists of successful and failed hosts
         mhosts, mfail = self.get_status(mashhost, mashuser)
         shosts, sfail = self.get_status(sigulhost, siguluser)
         rhosts, rfail = self.get_status(rsynchost, rsyncuser)
         hosts = mhosts + shosts + rhosts
         fhosts = mfail + sfail + rfail
-        
+       
+        # Start the main tasks
         if opts.status:
             print 'success: ', hosts 
             print 'failed: ', fhosts 
             exit(0)
-        
-        if sigulhost not in hosts: # Check connection with sigul host
+        elif sigulhost not in hosts: # Check connection with sigul host
             print 'Cannot connect to sigul: failed hosts: ', fhosts
             exit(1)
         elif opts.listunsigned:
@@ -204,15 +207,3 @@ class tools:
 
 if __name__ == '__main__':
     tools()
-
-
-
-
-
-
-
-
-
-
-
-
