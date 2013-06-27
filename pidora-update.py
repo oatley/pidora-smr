@@ -19,8 +19,8 @@ class tools:
         sigulhost = "england"
         mashhost = "japan"
         rsynchost = "pidora.ca"
-        siguluser = "oatley"
-        mashuser = "oatley"
+        siguluser = "agreene"
+        mashuser = "root"
         rsyncuser = "pidorapr"
         mashdir = "/usr/local/bin/mash-pidora"
         kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
@@ -28,7 +28,7 @@ class tools:
         # Create command line options
         parser = optparse.OptionParser()
         parser = optparse.OptionParser(usage='Usage: %prog [options]')
-        parser.add_option('--status',  help='check the status of all machine', dest='status', default=False, action='store_true')
+        parser.add_option('-i', '--info',  help='check machine status and configuration', dest='status', default=False, action='store_true')
         parser.add_option('-a', '--all',  help='sign, mash, rsync', dest='all', default=False, action='store_true')
         parser.add_option('-s', '--sign',  help='sign all packages in listed tag', dest='sign', default=False, action='store_true')
         parser.add_option('-m', '--mash',  help='start a mash run', dest='mash', default=False, action='store_true')
@@ -71,8 +71,17 @@ class tools:
        
         # Start the main tasks
         if opts.status:
-            print 'success: ', hosts 
-            print 'failed: ', fhosts 
+            print '\nsigulhost = ' + sigulhost
+            print 'mashhost = ' + mashhost
+            print 'rsynchost = ' + rsynchost
+            print 'siguluser = ' + siguluser
+            print 'mashuser = ' + mashuser
+            print 'rsyncuser = ' + rsyncuser
+            print 'mashdir = ' + mashdir
+            print 'kojitags = ', kojitags
+            print '\nworking hosts: ', hosts 
+            print 'failed hosts: ', fhosts 
+            print ""
             exit(0)
         elif sigulhost not in hosts: # Check connection with sigul host
             print 'Cannot connect to sigul: failed hosts: ', fhosts
@@ -89,30 +98,36 @@ class tools:
             print 'Cannot connect to mash hosts: failed hosts: ', fhosts
             exit(1)
         elif opts.mash:
-            self.run_mash(mashhost, mashuser, kojitags)
+            self.run_mash(mashhost, mashuser, kojitags, sigulhost, siguluser)
             exit(0)
         elif rsynchost not in hosts: # Check connection with rsync host
             print 'Cannot connect to rsync hosts: failed hosts: ', fhosts
             exit(1)
         elif opts.rsync:
+            self.checkmash(mashhost, mashuser)
             self.rsync(rsynchost, rsyncuser)
             exit(0)
         elif opts.everything:
             self.run_sign(sigulhost, siguluser, kojitags)
-            self.run_mash(mashhost, mashuser, kojitags)
+            self.run_mash(mashhost, mashuser, kojitags, sigulhost, siguluser)
             self.rsync(rsynchost, rsyncuser)
             exit(0)
     
     # Call sign over multiple koji tags and ask only once for the password
-    def run_sign(sigulhost, siguluser, kojitags):
-        print '\nEnter sigul key passphrase to sign these packages:'
+    def run_sign(self, sigulhost, siguluser, kojitags):
+        print '\n== Start: Sign run ==\n'
+        print 'Koji tags marked for signing:'
+        for tag in kojitags:
+            print tag.strip()
+        print '\nEnter sigul key passphrase:'
         password = getpass.getpass()
         for tag in kojitags:
             self.sign(sigulhost, siguluser, tag, password)
             print ""
 
     # Call mash and check that all packages are signed
-    def run_mash(mashhost, mashuser, kojitags):
+    def run_mash(self, mashhost, mashuser, kojitags, sigulhost, siguluser):
+        print '\n== Start: Mash run ==\n'
         for tag in kojitags: # Check for unsigned packages before mashing
             if self.checksign(sigulhost, siguluser, tag):
                 print 'Cannot mash while packages are unsigned: '
@@ -182,13 +197,18 @@ class tools:
 
     # Run mash and search through the log file for failed mash errors
     def mash(self, host, username):
+        srv = pysftp.Connection(host=host, username=username, log=True)
+        output = srv.execute('/usr/local/bin/pidora-mash-run')
+        srv.close()
+        self.checkmash(host, username)
+
+    def checkmash(self, host, username):
         errors = False
         errorline = []
         srv = pysftp.Connection(host=host, username=username, log=True)
-        output = srv.execute('/usr/local/bin/pidora-mash-run')
         output = srv.execute('cat /mnt/koji/mash/pidora-mash-latest')
         srv.close()
-        for line in lines:
+        for line in output:
             if re.search('^mash failed .*$', line):
                 errorline.append(line.strip())
                 errors = True
@@ -197,8 +217,9 @@ class tools:
             for line in errorline:
                 print line
             exit(1)
-
+        
     def rsync(self, host, username):
+        print '\n== Start: Rsync ==\n'
         srv = pysftp.Connection(host=host, username=username, log=True)
         output = srv.execute('/home/pidorapr/bin/rsync-japan')
         srv.close()
