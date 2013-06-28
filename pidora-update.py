@@ -104,6 +104,12 @@ class tools:
             print 'Cannot connect to rsync hosts: failed hosts: ', fhosts
             exit(1)
         elif opts.rsync:
+            for tag in kojitags:
+                if self.checksign(sigulhost, siguluser, tag):
+                    print 'Unsigned packages in: ' + tag
+                    print 'Run script with options: --list-unsigned to see unsigned packages'
+                    print '== Exiting due to unsigned packages =='
+                    exit(1)
             self.checkmash(mashhost, mashuser)
             self.rsync(rsynchost, rsyncuser)
             exit(0)
@@ -198,7 +204,7 @@ class tools:
     # Run mash and search through the log file for failed mash errors
     def mash(self, host, username):
         srv = pysftp.Connection(host=host, username=username, log=True)
-        output = srv.execute('/usr/local/bin/pidora-mash-run')
+        output = srv.execute('/usr/local/bin/mashrun-pidora-18')
         srv.close()
         self.checkmash(host, username)
 
