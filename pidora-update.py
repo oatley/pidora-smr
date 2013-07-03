@@ -12,6 +12,7 @@ import getpass
 import crypt
 import random
 import re
+import smtplib
 
 class tools:
     def __init__(self):
@@ -24,6 +25,7 @@ class tools:
         rsyncuser = "pidorapr"
         mashdir = "/usr/local/bin/mash-pidora"
         kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
+        email = ["andrew.oatley-willis@senecacollege.ca"]
 
         # Create command line options
         parser = optparse.OptionParser()
@@ -33,6 +35,7 @@ class tools:
         parser.add_option('-s', '--sign',  help='sign all packages in listed tag', dest='sign', default=False, action='store_true')
         parser.add_option('-m', '--mash',  help='start a mash run', dest='mash', default=False, action='store_true')
         parser.add_option('-r', '--rsync',  help='perform a rsync of the mash repos', dest='rsync', default=False, action='store_true')
+        parser.add_option('-e', '--email',  help='send report to a single email', dest='email', default=False, action='store', metavar=email)
         parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms', dest='listunsigned', default=False, action='store_true')
         parser.add_option('--koji-tag',  help='specify the koji tag to sign', dest='kojitag', default=False, action='store')
         parser.add_option('--sigul-user',  help='specify the user for sigul', dest='siguluser', default=siguluser, action='store', metavar=siguluser)
@@ -61,6 +64,8 @@ class tools:
             mashuser = opts.mashuser
         if opts.rsyncuser:
             rsyncuser = opts.rsyncuser
+        if opts.email:
+            email = [opts.email]
 
         # Create lists of successful and failed hosts
         mhosts, mfail = self.get_status(mashhost, mashuser)
@@ -79,6 +84,7 @@ class tools:
             print 'rsyncuser = ' + rsyncuser
             print 'mashdir = ' + mashdir
             print 'kojitags = ', kojitags
+            print 'email = ' + email
             print '\nworking hosts: ', hosts 
             print 'failed hosts: ', fhosts 
             print ""
@@ -91,6 +97,9 @@ class tools:
                 print 'Unsigned packages: ' + tag
                 self.checksign(sigulhost, siguluser, tag)
             exit(0)
+        elif not opts.sign and not opts.mash and not opts.rsync and not opts.everything:
+            parser.print_help()
+            exit(-1)
         elif opts.sign:
             self.run_sign(sigulhost, siguluser, kojitags)
             exit(0)
