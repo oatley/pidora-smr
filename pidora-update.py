@@ -12,20 +12,25 @@ import getpass
 import crypt
 import random
 import re
-import smtplib
+import string
+import subprocess
+import os
 
 class tools:
     def __init__(self):
         # Default configuration values
-        sigulhost = "england"
-        mashhost = "japan"
-        rsynchost = "pidora.ca"
-        siguluser = "agreene"
-        mashuser = "root"
-        rsyncuser = "pidorapr"
-        mashdir = "/usr/local/bin/mash-pidora"
-        kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
-        email = ["andrew.oatley-willis@senecacollege.ca"]
+        self.sigulhost = "england.proxmity.on.ca"
+        self.mashhost = "japan.proximity.on.ca"
+        self.rsynchost = "pidora.proximity.on.ca"
+        self.siguluser = "agreene"
+        self.mashuser = "root"
+        self.rsyncuser = "pidorapr"
+        self.mashdir = "/usr/local/bin/mash-pidora"
+        self.kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
+        self.email = "andrew.oatley-willis@senecacollege.ca"
+        self.auto = False
+        self.logdir = "/var/log/pidora-smr/"
+        self.logfile = "output"
 
         # Create command line options
         parser = optparse.OptionParser()
@@ -35,15 +40,18 @@ class tools:
         parser.add_option('-s', '--sign',  help='sign all packages in listed tag', dest='sign', default=False, action='store_true')
         parser.add_option('-m', '--mash',  help='start a mash run', dest='mash', default=False, action='store_true')
         parser.add_option('-r', '--rsync',  help='perform a rsync of the mash repos', dest='rsync', default=False, action='store_true')
-        parser.add_option('-e', '--email',  help='send report to a single email', dest='email', default=False, action='store', metavar=email)
         parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms', dest='listunsigned', default=False, action='store_true')
+        parser.add_option('--auto',  help='enables logging and emails logs', dest='auto', default=self.auto, action='store_true')
         parser.add_option('--koji-tag',  help='specify the koji tag to sign', dest='kojitag', default=False, action='store')
-        parser.add_option('--sigul-user',  help='specify the user for sigul', dest='siguluser', default=siguluser, action='store', metavar=siguluser)
-        parser.add_option('--sigul-host',  help='specify the host for sigul', dest='sigulhost', default=sigulhost, action='store', metavar=sigulhost)
-        parser.add_option('--mash-user',  help='specify the user for mash', dest='mashuser', default=mashuser, action='store', metavar=mashuser)
-        parser.add_option('--mash-host',  help='specify the host for mash', dest='mashhost', default=mashhost, action='store', metavar=mashhost)
-        parser.add_option('--rsync-user',  help='specify the user for rsync', dest='rsyncuser', default=rsyncuser, action='store', metavar=rsyncuser)
-        parser.add_option('--rsync-host',  help='specify the host for rsync', dest='rsynchost', default=rsynchost, action='store', metavar=rsynchost)
+        parser.add_option('--email',  help='specify the email to send logs to', dest='email', default=False, action='store', metavar=self.email)
+        parser.add_option('--sigul-user',  help='specify the user for sigul', dest='siguluser', default=self.siguluser, action='store', metavar=self.siguluser)
+        parser.add_option('--sigul-host',  help='specify the host for sigul', dest='sigulhost', default=self.sigulhost, action='store', metavar=self.sigulhost)
+        parser.add_option('--mash-user',  help='specify the user for mash', dest='mashuser', default=self.mashuser, action='store', metavar=self.mashuser)
+        parser.add_option('--mash-host',  help='specify the host for mash', dest='mashhost', default=self.mashhost, action='store', metavar=self.mashhost)
+        parser.add_option('--rsync-user',  help='specify the user for rsync', dest='rsyncuser', default=self.rsyncuser, action='store', metavar=self.rsyncuser)
+        parser.add_option('--rsync-host',  help='specify the host for rsync', dest='rsynchost', default=self.rsynchost, action='store', metavar=self.rsynchost)
+        parser.add_option('--log-dir',  help='specify a logging directory', dest='logdir', default=self.logdir, action='store', metavar=self.logdir)
+        parser.add_option('--log-file',  help='specify a log file name', dest='logfile', default=self.logfile, action='store', metavar=self.logfile)
         (opts, args) = parser.parse_args()
 
         # Check number of arguments and check for option switches
@@ -51,104 +59,174 @@ class tools:
             parser.print_help()
             exit(-1)
         if opts.kojitag:
-            kojitags = [opts.kojitag]
+            self.kojitags = [opts.kojitag]
         if opts.sigulhost:
-            sigulhost = opts.sigulhost
+            self.sigulhost = opts.sigulhost
         if opts.mashhost:
-            mashhost = opts.mashhost
+            self.mashhost = opts.mashhost
         if opts.rsynchost:
-            rsynchost = opts.rsynchost
+            self.rsynchost = opts.rsynchost
         if opts.siguluser:
-            siguluser = opts.siguluser
+            self.siguluser = opts.siguluser
         if opts.mashuser:
-            mashuser = opts.mashuser
+            self.mashuser = opts.mashuser
         if opts.rsyncuser:
-            rsyncuser = opts.rsyncuser
+            self.rsyncuser = opts.rsyncuser
         if opts.email:
-            email = [opts.email]
+            self.email = opts.email
+        if opts.auto:
+            self.auto = opts.auto
+        if opts.logdir:
+            self.logdir = opts.logdir
+        if opts.logfile:
+            self.logfile = self.logdir + opts.logfile
+        
+        # Check for a few strange situations with options
+        self.signmash = False
+        self.signrsync = False
+        self.mashrsync = False
+        if opts.sign and opts.mash and opts.rsync:
+            opts.sign = False
+            opts.mash = False
+            opts.rsync = False
+            opts.everything = True
+        elif opts.sign and opts.mash:
+            opts.sign = False
+            opts.mash = False
+            self.signmash = True
+        elif opts.sign and opts.rsync:
+            opts.sign = False
+            opts.rsync = False
+            self.signrsync = True
+        elif opts.mash and opts.rsync:
+            opts.mash = False
+            opts.rsync = False
+            self.mashrsync = True
 
         # Create lists of successful and failed hosts
-        mhosts, mfail = self.get_status(mashhost, mashuser)
-        shosts, sfail = self.get_status(sigulhost, siguluser)
-        rhosts, rfail = self.get_status(rsynchost, rsyncuser)
-        hosts = mhosts + shosts + rhosts
-        fhosts = mfail + sfail + rfail
+        mhosts, mfail = self.get_status(self.mashhost, self.mashuser)
+        shosts, sfail = self.get_status(self.sigulhost, self.siguluser)
+        rhosts, rfail = self.get_status(self.rsynchost, self.rsyncuser)
+        self.hosts = mhosts + shosts + rhosts
+        self.fhosts = mfail + sfail + rfail
        
         # Start the main tasks
         if opts.status:
-            print '\nsigulhost = ' + sigulhost
-            print 'mashhost = ' + mashhost
-            print 'rsynchost = ' + rsynchost
-            print 'siguluser = ' + siguluser
-            print 'mashuser = ' + mashuser
-            print 'rsyncuser = ' + rsyncuser
-            print 'mashdir = ' + mashdir
-            print 'kojitags = ', kojitags
-            print 'email = ' + email
-            print '\nworking hosts: ', hosts 
-            print 'failed hosts: ', fhosts 
-            print ""
-            exit(0)
-        elif sigulhost not in hosts: # Check connection with sigul host
-            print 'Cannot connect to sigul: failed hosts: ', fhosts
-            exit(1)
+            print self.info()
+        elif self.sigulhost not in self.hosts: # Check connection with sigul host
+            self.email_exit('[Error]\nCannot connect to sigul: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
         elif opts.listunsigned:
-            for tag in kojitags:
-                print 'Unsigned packages: ' + tag
-                self.checksign(sigulhost, siguluser, tag)
+            print 'Unsigned packages: ', self.kojitags
+            self.checksign()
             exit(0)
         elif not opts.sign and not opts.mash and not opts.rsync and not opts.everything:
             parser.print_help()
             exit(-1)
         elif opts.sign:
-            self.run_sign(sigulhost, siguluser, kojitags)
+            self.sign()
+            self.email_exit('[Success]\nSign for pidora complete', subject='pidora-smr - success')
+        elif self.mashhost not in self.hosts: # Check connection with mash host
+            self.email_exit('[Error]\nCannot connect to mash: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
+        elif self.checksign():
+            print 'Unsigned packages: ', self.kojitags
+            self.checksign()
+            print 'Cannot mash or rsync if packages are not signed'
             exit(0)
-        elif mashhost not in hosts: # Check connection with mash host
-            print 'Cannot connect to mash hosts: failed hosts: ', fhosts
-            exit(1)
         elif opts.mash:
-            self.run_mash(mashhost, mashuser, kojitags, sigulhost, siguluser)
-            exit(0)
-        elif rsynchost not in hosts: # Check connection with rsync host
-            print 'Cannot connect to rsync hosts: failed hosts: ', fhosts
-            exit(1)
+            self.mash()
+            self.email_exit('[Success]\nMash for pidora complete', subject='pidora-smr - success')
+        elif self.rsynchost not in self.hosts: # Check connection with rsync host
+            self.email_exit('[Error]\nCannot connect to rsync: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
         elif opts.rsync:
-            for tag in kojitags:
-                if self.checksign(sigulhost, siguluser, tag):
-                    print 'Unsigned packages in: ' + tag
-                    print 'Run script with options: --list-unsigned to see unsigned packages'
-                    print '== Exiting due to unsigned packages =='
-                    exit(1)
-            self.checkmash(mashhost, mashuser)
-            self.rsync(rsynchost, rsyncuser)
-            exit(0)
+            self.rsync()
+            self.email_exit('[Success]\nRsync for pidora complete', subject='pidora-smr - success')
         elif opts.everything:
-            self.run_sign(sigulhost, siguluser, kojitags)
-            self.run_mash(mashhost, mashuser, kojitags, sigulhost, siguluser)
-            self.rsync(rsynchost, rsyncuser)
-            exit(0)
-    
-    # Call sign over multiple koji tags and ask only once for the password
-    def run_sign(self, sigulhost, siguluser, kojitags):
-        print '\n== Start: Sign run ==\n'
-        print 'Koji tags marked for signing:'
-        for tag in kojitags:
-            print tag.strip()
-        print '\nEnter sigul key passphrase:'
-        password = getpass.getpass()
-        for tag in kojitags:
-            self.sign(sigulhost, siguluser, tag, password)
-            print ""
+            self.sign()
+            self.mash()
+            self.rsync()
+            self.email_exit('[Success]\nSign, mash, rsync for pidora complete', subject='pidora-smr - success')
+   
+    # Email text and subject, written a little bit crazy...
+    def sendemail(self, subject, text):
+        arg = '-s "' + subject + '" "' + self.email + '"'
+        output = subprocess.check_output(['echo "' + str(text) + '" |mail ' + str(arg)], shell=True)
 
-    # Call mash and check that all packages are signed
-    def run_mash(self, mashhost, mashuser, kojitags, sigulhost, siguluser):
-        print '\n== Start: Mash run ==\n'
-        for tag in kojitags: # Check for unsigned packages before mashing
-            if self.checksign(sigulhost, siguluser, tag):
-                print 'Cannot mash while packages are unsigned: '
-                self.checksign(sigulhost, siguluser, tag)
-                exit(1)
-        self.mash(mashhost, mashuser)
+    def logging(self, logme):
+        try:
+            os.mkdirs(directory)
+        except OSError: pass
+
+    # Display all configuration data + hosts status
+    def info(self, infotype='all'):
+        if infotype == 'all':
+            info = ['\n[Connection]\nsigulhost = ' + self.sigulhost,
+                    'siguluser = ' + self.siguluser,
+                    'mashhost = ' + self.mashhost,
+                    'mashuser = ' + self.mashuser,
+                    'rsynchost = ' + self.rsynchost,
+                    'rsyncuser = ' + self.rsyncuser,
+                    '\n[General]\nauto = ' + str(self.auto),
+                    'mashdir = ' + self.mashdir,
+                    'kojitags = ' + str(self.kojitags),
+                    'email = ' + self.email,
+                    '\nlogdir = ' + self.logdir, 
+                    'logfile = ' + self.logfile, 
+                    '\n[Hosts]\nworking hosts: ' + str(self.hosts),
+                    'failed hosts: ' + str(self.fhosts) + '\n']
+        elif infotype == 'sign':
+            info = ['\n[Connection]\nsigulhost = ' + self.sigulhost,
+                    'siguluser = ' + self.siguluser,
+                    '\n[General]\nauto = ' + str(self.auto),
+                    'kojitags = ' + str(self.kojitags),
+                    'logdir = ' + self.logdir, 
+                    'logfile = ' + self.logfile, 
+                    '\n[Hosts]\nworking hosts: ' + str(self.hosts),
+                    'failed hosts: ' + str(self.fhosts) + '\n']
+        elif infotype == 'mash':
+            info = ['\n[Connection]\nmashhost = ' + self.mashhost,
+                    'mashuser = ' + self.mashuser,
+                    '\n[General]\nauto = ' + str(self.auto),
+                    'mashdir = ' + self.mashdir,
+                    'kojitags = ' + str(self.kojitags),
+                    '\nlogdir = ' + self.logdir, 
+                    'logfile = ' + self.logfile, 
+                    '\n[Hosts]\nworking hosts: ' + str(self.hosts),
+                    'failed hosts: ' + str(self.fhosts) + '\n']
+        elif infotype == 'rsync':
+            info = ['\n[Connection]\nrsynchost = ' + self.rsynchost,
+                    'rsyncuser = ' + self.rsyncuser,
+                    'mashdir = ' + self.mashdir,
+                    '\n[General]\nauto = ' + str(self.auto),
+                    'kojitags = ' + str(self.kojitags),
+                    '\nlogdir = ' + self.logdir, 
+                    'logfile = ' + self.logfile, 
+                    '\n[Hosts]\nworking hosts: ' + str(self.hosts),
+                    'failed hosts: ' + str(self.fhosts) + '\n']
+        return '\n'.join(info)
+
+    # Display text and exit or send an email and exit
+    def email_exit(self, text, subject=False, errors=0):
+        if self.auto and subject:
+            self.sendemail(subject, text)
+            exit(errors)
+        else:
+            print text
+            exit(errors)
+
+    # Rsync to the repo directory
+    def rsync(self):
+        print '\n== Start: Rsync ==\n'
+        self.checkmash()
+        srv = pysftp.Connection(host=self.rsynchost, username=self.rsyncuser, log=True)
+        output = srv.execute('/home/pidorapr/bin/rsync-japan; echo $? > /home/pidorapr/.rsync-japan-exit-status')
+        for line in output:
+            print line.strip()
+        output = srv.execute('cat /home/pidorapr/.rsync-japan-exit-status')
+        srv.close()
+        if str(output.strip()) != '0':
+            self.email_exit('[Error]\nRsync failed stopping program\nExit status = ' + str(output.strip()) + self.info(), subject='pidora-smr - failed', errors=1)
+
+
 
     # Check if hosts are online and can establish connection, return lists of failed and succesful hosts
     def get_status(self, host, username):
@@ -173,73 +251,70 @@ class tools:
         return False
 
     # Start a signing run across a designated tag
-    def sign(self, host, username, tag, password):
-        print "Signing packages in tag: " + tag
-        print "Packages found: "
-        print self.checksign(host, username, tag)
-        tempfile1 = crypt.crypt(str(random.random()), "pidora" ) + '.log'
-        tempfile = tempfile1.replace("/", "")
-        tempdir = '~/.pidora/'
-        srv = pysftp.Connection(host=host, username=username, log=True)
-        errors = srv.execute('mkdir ' + tempdir + ' 2>/dev/null')
-        errors = srv.execute('touch ' + tempdir + tempfile + '2>/dev/null')
-        output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password=' + password + ' --write-all --tag=' + tag + " pidora-18 2>" + tempdir + tempfile)
-        errors = srv.execute('cat ' + tempdir + tempfile)
-        srv.close()
-        # Scan through output and find errors! If errors are found, stop program and spit out error warnings
-        outputs = output + errors
-        errors = False
-        for output in outputs:
-            print output.strip()
-            if re.search('^ERROR:.*$', output):
-                errors = True
-        if errors:
-            print "\n== Error signing stopping program =="
-            exit(1)
+    def sign(self):
+        print '\n== Start: Sign run ==\n'
+        print 'Koji tags marked for signing:'
+        for tag in self.kojitags:
+            print tag.strip()
+        print '\nEnter sigul key passphrase:'
+        password = getpass.getpass()
+        for tag in self.kojitags:
+            print "Signing packages in tag: " + tag
+            print "Packages found: "
+            print self.checksign()
+            tempfile1 = crypt.crypt(str(random.random()), "pidora" ) + '.log'
+            tempfile = tempfile1.replace("/", "")
+            tempdir = '~/.pidora/'
+            srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
+            errors = srv.execute('mkdir ' + tempdir + ' 2>/dev/null')
+            errors = srv.execute('touch ' + tempdir + tempfile + '2>/dev/null')
+            output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password=' + password + ' --write-all --tag=' + tag + " pidora-18 2>" + tempdir + tempfile)
+            errors = srv.execute('cat ' + tempdir + tempfile)
+            srv.close()
+            # Scan through output and find errors! If errors are found, stop program and spit out error warnings
+            outputs = output + errors
+            errors = []
+            for output in outputs:
+                print output.strip()
+                if re.search('^ERROR:.*$', output):
+                    errors.append(output)
+            if errors:
+                self.email_exit('[Error]\nError signing stopping program\n' + str(errors) + self.info(), subject='pidora-smr - failed', errors=1)
 
     # Check koji for unsigned packages, returns True if unsigned rpms are found
-    def checksign(self, host, username, tag):
+    def checksign(self):
         check = False
-        srv = pysftp.Connection(host=host, username=username, log=True)
-        output = srv.execute("~/.sigul/sigulsign_unsigned.py --just-list --tag=" + tag + " pidora-18")
-        srv.close()
-        for rpm in output:
-            print rpm.strip()
-            if rpm.strip() != "":
-                check = "unsigned rpms found"
+        for tag in self.kojitags:
+            srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
+            output = srv.execute("~/.sigul/sigulsign_unsigned.py --just-list --tag=" + tag + " pidora-18")
+            srv.close()
+            for rpm in output:
+                print rpm.strip()
+                if rpm.strip() != "":
+                    check = "unsigned rpms found"
         if check:
             return True
 
     # Run mash and search through the log file for failed mash errors
-    def mash(self, host, username):
-        srv = pysftp.Connection(host=host, username=username, log=True)
+    def mash(self):
+        print '\n== Start: Mash run ==\n'
+        srv = pysftp.Connection(host=self.mashhost, username=self.mashuser, log=True)
         output = srv.execute('/usr/local/bin/mashrun-pidora-18')
         srv.close()
-        self.checkmash(host, username)
+        self.checkmash()
 
-    def checkmash(self, host, username):
-        errors = False
-        errorline = []
-        srv = pysftp.Connection(host=host, username=username, log=True)
-        output = srv.execute('cat /mnt/koji/mash/pidora-mash-latest')
+    def checkmash(self):
+        errors = []
+        srv = pysftp.Connection(host=self.mashhost, username=self.mashuser, log=True)
+        output = srv.execute('cat /mnt/koji/mash/pidora-mash-latest/mash.log')
         srv.close()
         for line in output:
             if re.search('^mash failed .*$', line):
-                errorline.append(line.strip())
-                errors = True
+                errors.append(line.strip())
         if errors:
-            print "\n== mash failed on repo stopping program ==\n"
-            for line in errorline:
-                print line
-            exit(1)
+            self.email_exit('[Error]\nmash failed on repo stopping program\n' + str(errors) + self.info(), subject='pidora-smr - failed', errors=1)
+            
         
-    def rsync(self, host, username):
-        print '\n== Start: Rsync ==\n'
-        srv = pysftp.Connection(host=host, username=username, log=True)
-        output = srv.execute('/home/pidorapr/bin/rsync-japan')
-        srv.close()
-        for line in output:
-            print line.strip()
 
 if __name__ == '__main__':
     tools()
