@@ -19,7 +19,7 @@ import os
 class tools:
     def __init__(self):
         # Default configuration values
-        self.sigulhost = "england.proxmity.on.ca"
+        self.sigulhost = "england.proximity.on.ca"
         self.mashhost = "japan.proximity.on.ca"
         self.rsynchost = "pidora.proximity.on.ca"
         self.siguluser = "agreene"
