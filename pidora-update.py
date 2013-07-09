@@ -127,21 +127,29 @@ class tools:
             self.email_exit('[Success]\nSign for pidora complete', subject='pidora-smr - success')
         elif self.mashhost not in self.hosts: # Check connection with mash host
             self.email_exit('[Error]\nCannot connect to mash: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
-        elif self.checksign():
-            print 'Unsigned packages: ', self.kojitags
-            self.checksign()
-            print 'Cannot mash or rsync if packages are not signed'
-            exit(0)
         elif opts.mash:
+            self.checksign()
             self.mash()
             self.email_exit('[Success]\nMash for pidora complete', subject='pidora-smr - success')
         elif self.rsynchost not in self.hosts: # Check connection with rsync host
             self.email_exit('[Error]\nCannot connect to rsync: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
         elif opts.rsync:
+            self.checksign()
             self.rsync()
             self.email_exit('[Success]\nRsync for pidora complete', subject='pidora-smr - success')
+        elif self.signmash:
+            self.sign()
+            self.checksign()
+            self.mash()
+            self.email_exit('[Success]\nSign/mash for pidora complete', subject='pidora-smr - success')
+        elif self.signrsync:
+            self.sign()
+            self.checksign()
+            self.rsync()
+            self.email_exit('[Success]\nSign/rsync for pidora complete', subject='pidora-smr - success')
         elif opts.everything:
             self.sign()
+            self.checksign()
             self.mash()
             self.rsync()
             self.email_exit('[Success]\nSign, mash, rsync for pidora complete', subject='pidora-smr - success')
@@ -293,7 +301,8 @@ class tools:
                 if rpm.strip() != "":
                     check = "unsigned rpms found"
         if check:
-            return True
+            self.email_exit('[Error]\nCannot mash or rsync if packages are not signed:\n' + self.info(), subject='pidora-smr - failed', errors=1)
+            
 
     # Run mash and search through the log file for failed mash errors
     def mash(self):

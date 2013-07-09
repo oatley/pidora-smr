@@ -1,0 +1,35 @@
+.\" Manpage for pidora-smr
+.\" Contact andrew.oatley-willis@senecacollege.ca to fix errors
+.TH man 1 "09 July 2013" "1.0" "pidora-smr man page"
+.SH NAME
+pidora\-smr \- run a sign, mash, or rsync with safety checks
+.SH SYNOPSIS
+pidora\-smr [OPTIONS]
+.SH DESCRIPTION
+Python written program that uses network calls and passwordless logins to execute commands on networked computers. The programs that are externally called start sign, mash, and rsync instances which are used for the release process of pidora 18. The main reason for calling them through a single scripts allows for a safe check environment for all programs and simplifying the process, to save time.
+.SH OPTIONS
+-h, --help            show this help message and exit
+-i, --info            check machine status and configuration
+-a, --all             sign, mash, rsync
+-s, --sign            sign all packages in listed tag
+-m, --mash            start a mash run
+-r, --rsync           perform a rsync of the mash repos
+-l, --list-unsigned   list unsigned rpms
+--auto                enables logging and emails logs
+--koji-tag=KOJITAG    specify the koji tag to sign
+--email=andrew.oatley-willis@senecacollege.ca 
+                      specify the email to send logs to
+--sigul-user=agreene  specify the user for sigul
+--sigul-host=england.proximity.on.ca
+                      specify the host for sigul
+--mash-user=root      specify the user for mash
+--mash-host=japan.proximity.on.ca
+                      specify the host for mash
+--rsync-user=pidorapr specify the user for rsync
+--rsync-host=pidora.proximity.on.ca
+                      specify the host for rsync
+--log-dir=/var/log/pidora-smr/
+                      specify a logging directory
+--log-file=output     specify a log file name
+.SH AUTHOR
+Andrew Oatley-Willis (andrew.oatley-willis@senecacollege.ca)
