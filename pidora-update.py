@@ -218,7 +218,8 @@ class tools:
             self.sendemail(subject, text)
             exit(errors)
         else:
-            print text
+            for errortext in text:
+                print errortext
             exit(errors)
 
     # Rsync to the repo directory
@@ -269,14 +270,14 @@ class tools:
         for tag in self.kojitags:
             print "Signing packages in tag: " + tag
             print "Packages found: "
-            print self.checksign()
+            #print self.checksign()
             tempfile1 = crypt.crypt(str(random.random()), "pidora" ) + '.log'
             tempfile = tempfile1.replace("/", "")
             tempdir = '~/.pidora/'
             srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
             errors = srv.execute('mkdir ' + tempdir + ' 2>/dev/null')
             errors = srv.execute('touch ' + tempdir + tempfile + '2>/dev/null')
-            output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password=' + password + ' --write-all --tag=' + tag + " pidora-18 2>" + tempdir + tempfile)
+            output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password="' + password + '" --write-all --tag=' + tag + " pidora-18 2>" + tempdir + tempfile)
             errors = srv.execute('cat ' + tempdir + tempfile)
             srv.close()
             # Scan through output and find errors! If errors are found, stop program and spit out error warnings
