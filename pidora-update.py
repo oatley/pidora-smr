@@ -19,18 +19,19 @@ import os
 class tools:
     def __init__(self):
         # Default configuration values
-        self.sigulhost = "england.proximity.on.ca"
+        self.sigulhost = "bahamas.proximity.on.ca"
         self.mashhost = "japan.proximity.on.ca"
-        self.rsynchost = "pidora.proximity.on.ca"
-        self.siguluser = "agreene"
-        self.mashuser = "root"
-        self.rsyncuser = "pidorapr"
+        self.rsynchost = "pidora.ca"
+        self.siguluser = ""
+        self.mashuser = ""
+        self.rsyncuser = ""
         self.mashdir = "/usr/local/bin/mash-pidora"
         self.kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
         self.email = "andrew.oatley-willis@senecacollege.ca"
         self.auto = False
         self.logdir = "/var/log/pidora-smr/"
         self.logfile = "output"
+        self.listunsigned = False
 
         # Create command line options
         parser = optparse.OptionParser()
@@ -40,6 +41,7 @@ class tools:
         parser.add_option('-s', '--sign',  help='sign all packages in listed tag', dest='sign', default=False, action='store_true')
         parser.add_option('-m', '--mash',  help='start a mash run', dest='mash', default=False, action='store_true')
         parser.add_option('-r', '--rsync',  help='perform a rsync of the mash repos', dest='rsync', default=False, action='store_true')
+        parser.add_option('-f', '--force',  help='can force some options', dest='force', default=False, action='store_true')
         parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms', dest='listunsigned', default=False, action='store_true')
         parser.add_option('--auto',  help='enables logging and emails logs', dest='auto', default=self.auto, action='store_true')
         parser.add_option('--koji-tag',  help='specify the koji tag to sign', dest='kojitag', default=False, action='store')
@@ -80,7 +82,16 @@ class tools:
             self.logdir = opts.logdir
         if opts.logfile:
             self.logfile = self.logdir + opts.logfile
+        if opts.listunsigned:
+            self.listunsigned = opts.listunsigned
         
+        # Allow a force override for some options
+        if opts.force and not (opts.sign or opts.mash or opts.rsync):
+            print 'Option force can be used with rsync to force a rsync when packages are unsigned or when you are building'
+            parser.print_help()
+            exit(-1)
+
+
         # Check for a few strange situations with options
         self.signmash = False
         self.signrsync = False
@@ -119,7 +130,7 @@ class tools:
             print 'Unsigned packages: ', self.kojitags
             self.checksign()
             exit(0)
-        elif not opts.sign and not opts.mash and not opts.rsync and not opts.everything:
+        elif not opts.sign and not opts.mash and not opts.rsync and not opts.everything and not self.signmash and not self.mashrsync:
             parser.print_help()
             exit(-1)
         elif opts.sign:
@@ -133,6 +144,10 @@ class tools:
             self.email_exit('[Success]\nMash for pidora complete', subject='pidora-smr - success')
         elif self.rsynchost not in self.hosts: # Check connection with rsync host
             self.email_exit('[Error]\nCannot connect to rsync: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
+        elif opts.rsync and opts.force:
+            print 'Skipping sign check'
+            self.rsync()
+            self.email_exit('[Success]\nRsync for pidora complete', subject='pidora-smr - success')
         elif opts.rsync:
             self.checksign()
             self.rsync()
@@ -218,8 +233,7 @@ class tools:
             self.sendemail(subject, text)
             exit(errors)
         else:
-            for errortext in text:
-                print errortext
+            print text
             exit(errors)
 
     # Rsync to the repo directory
@@ -232,7 +246,7 @@ class tools:
             print line.strip()
         output = srv.execute('cat /home/pidorapr/.rsync-japan-exit-status')
         srv.close()
-        if str(output.strip()) != '0':
+        if str(output).strip() != '0':
             self.email_exit('[Error]\nRsync failed stopping program\nExit status = ' + str(output.strip()) + self.info(), subject='pidora-smr - failed', errors=1)
 
 
@@ -251,7 +265,7 @@ class tools:
     # Connect to the hosts, return True or False
     def connect(self, host, username):
         try:
-            response=urllib2.urlopen('http://'+host,timeout=1)
+            #response=urllib2.urlopen('http://'+host,timeout=1)
             srv = pysftp.Connection(host=host, username=username, log=True)
             srv.close()
             return True
@@ -297,11 +311,13 @@ class tools:
             srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
             output = srv.execute("~/.sigul/sigulsign_unsigned.py --just-list --tag=" + tag + " pidora-18")
             srv.close()
+            print '\n\n', tag
             for rpm in output:
                 print rpm.strip()
-                if rpm.strip() != "":
+                if rpm.strip() != "" and rpm.strip() != "('Package count: ', 0)":
+                    print rpm.strip()
                     check = "unsigned rpms found"
-        if check:
+        if check and not self.listunsigned:
             self.email_exit('[Error]\nCannot mash or rsync if packages are not signed:\n' + self.info(), subject='pidora-smr - failed', errors=1)
             
 
