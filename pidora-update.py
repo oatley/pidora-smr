@@ -26,7 +26,9 @@ class tools:
         self.mashuser = ""
         self.rsyncuser = ""
         self.mashdir = "/usr/local/bin/mash-pidora"
-        self.kojitags = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
+        self.kojitags18 = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
+        self.kojitags19 = ['f19', 'f19-updates', 'f19-rpfr-updates', 'f19-updates-testing', 'f19-rpfr-updates-testing']
+        self.kojitags20 = ['f20', 'f20-updates', 'f20-rpfr-updates', 'f20-updates-testing', 'f20-rpfr-updates-testing']
         self.email = "andrew.oatley-willis@senecacollege.ca"
         self.auto = False
         self.logdir = "/var/log/pidora-smr/"
@@ -43,6 +45,7 @@ class tools:
         parser.add_option('-r', '--rsync',  help='perform a rsync of the mash repos', dest='rsync', default=False, action='store_true')
         parser.add_option('-f', '--force',  help='can force some options', dest='force', default=False, action='store_true')
         parser.add_option('-l', '--list-unsigned',  help='list unsigned rpms', dest='listunsigned', default=False, action='store_true')
+        parser.add_option('--pidora',  help='specify version of pidora = 18, 19', dest='pidora', default=False, action='store')
         parser.add_option('--auto',  help='enables logging and emails logs', dest='auto', default=self.auto, action='store_true')
         parser.add_option('--koji-tag',  help='specify the koji tag to sign', dest='kojitag', default=False, action='store')
         parser.add_option('--email',  help='specify the email to send logs to', dest='email', default=False, action='store', metavar=self.email)
@@ -84,12 +87,32 @@ class tools:
             self.logfile = self.logdir + opts.logfile
         if opts.listunsigned:
             self.listunsigned = opts.listunsigned
+        if opts.pidora:
+            self.pidora = opts.pidora
         
         # Allow a force override for some options
         if opts.force and not (opts.sign or opts.mash or opts.rsync):
             print 'Option force can be used with rsync to force a rsync when packages are unsigned or when you are building'
             parser.print_help()
             exit(-1)
+
+        # Check if version of pidora was specified
+        if not opts.pidora:
+            print "Option pidora should specify a specific version of pidora"
+            parser.print_help()
+            exit(-1)
+
+        if opts.pidora == "18":
+            self.kojitags = self.kojitags18
+        elif opts.pidora == "19":
+            self.kojitags = self.kojitags19
+        elif opts.pidora == "20":
+            self.kojitags = self.kojitags20
+        else:
+            print "Option pidora specifies unknown version of pidora"
+            parser.print_help()
+            exit(-1)
+
 
 
         # Check for a few strange situations with options
@@ -121,6 +144,9 @@ class tools:
         self.hosts = mhosts + shosts + rhosts
         self.fhosts = mfail + sfail + rfail
        
+
+        #self.testrun(opts)
+        #exit()
         # Start the main tasks
         if opts.status:
             print self.info()
@@ -139,6 +165,7 @@ class tools:
         elif self.mashhost not in self.hosts: # Check connection with mash host
             self.email_exit('[Error]\nCannot connect to mash: failed hosts: \n' + self.info(), subject='pidora-smr - failed', errors=1)
         elif opts.mash:
+            #self.checkmash()
             self.checksign()
             self.mash()
             self.email_exit('[Success]\nMash for pidora complete', subject='pidora-smr - success')
@@ -169,6 +196,14 @@ class tools:
             self.rsync()
             self.email_exit('[Success]\nSign, mash, rsync for pidora complete', subject='pidora-smr - success')
    
+    # Testing function
+    def testrun(self, opts):
+            print "Pidora: " , opts.pidora
+            print "Kojitags: " , self.kojitags
+            print "Sign: " , opts.sign
+            print "Mash: " , opts.mash
+            print "Rsync: " , opts.rsync
+
     # Email text and subject, written a little bit crazy...
     def sendemail(self, subject, text):
         arg = '-s "' + subject + '" "' + self.email + '"'
@@ -238,16 +273,17 @@ class tools:
 
     # Rsync to the repo directory
     def rsync(self):
+        rsyncname = "pidora-" + self.pidora
         print '\n== Start: Rsync ==\n'
         self.checkmash()
         srv = pysftp.Connection(host=self.rsynchost, username=self.rsyncuser, log=True)
-        output = srv.execute('/home/pidorapr/bin/rsync-japan; echo $? > /home/pidorapr/.rsync-japan-exit-status')
+        output = srv.execute('/home/pidorapr/bin/rsync-' + rsyncname +'; echo $? > /home/pidorapr/.rsync-japan-exit-status')
         for line in output:
             print line.strip()
         output = srv.execute('cat /home/pidorapr/.rsync-japan-exit-status')
         srv.close()
-        if str(output).strip() != '0':
-            self.email_exit('[Error]\nRsync failed stopping program\nExit status = ' + str(output.strip()) + self.info(), subject='pidora-smr - failed', errors=1)
+        if output[0].strip() != '0':
+            self.email_exit('[Error]\nRsync failed stopping program\nExit status = ' + output[0].strip() + self.info(), subject='pidora-smr - failed', errors=1)
 
 
 
@@ -275,6 +311,7 @@ class tools:
 
     # Start a signing run across a designated tag
     def sign(self):
+        signkeyname = "pidora-" + self.pidora
         print '\n== Start: Sign run ==\n'
         print 'Koji tags marked for signing:'
         for tag in self.kojitags:
@@ -291,7 +328,7 @@ class tools:
             srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
             errors = srv.execute('mkdir ' + tempdir + ' 2>/dev/null')
             errors = srv.execute('touch ' + tempdir + tempfile + '2>/dev/null')
-            output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password="' + password + '" --write-all --tag=' + tag + " pidora-18 2>" + tempdir + tempfile)
+            output = srv.execute('~/.sigul/sigulsign_unsigned.py -v --password="' + password + '" --write-all --tag=' + tag + " " + signkeyname + " 2>" + tempdir + tempfile)
             errors = srv.execute('cat ' + tempdir + tempfile)
             srv.close()
             # Scan through output and find errors! If errors are found, stop program and spit out error warnings
@@ -306,10 +343,11 @@ class tools:
 
     # Check koji for unsigned packages, returns True if unsigned rpms are found
     def checksign(self):
+        signkeyname = "pidora-" + self.pidora
         check = False
         for tag in self.kojitags:
             srv = pysftp.Connection(host=self.sigulhost, username=self.siguluser, log=True)
-            output = srv.execute("~/.sigul/sigulsign_unsigned.py --just-list --tag=" + tag + " pidora-18")
+            output = srv.execute("~/.sigul/sigulsign_unsigned.py --just-list --tag=" + tag + " " + signkeyname)
             srv.close()
             print '\n\n', tag
             for rpm in output:
@@ -324,15 +362,22 @@ class tools:
     # Run mash and search through the log file for failed mash errors
     def mash(self):
         print '\n== Start: Mash run ==\n'
+        mashrunname = 'mashrun-pidora-' + self.pidora
         srv = pysftp.Connection(host=self.mashhost, username=self.mashuser, log=True)
-        output = srv.execute('/usr/local/bin/mashrun-pidora-18')
+        output = srv.execute('/usr/local/bin/' + mashrunname)
         srv.close()
         self.checkmash()
 
     def checkmash(self):
+        output = []
         errors = []
         srv = pysftp.Connection(host=self.mashhost, username=self.mashuser, log=True)
-        output = srv.execute('cat /mnt/koji/mash/pidora-mash-latest/mash.log')
+        if self.pidora:
+            output = srv.execute('cat /mnt/koji/mash/pidora-'+self.pidora+'-latest/mash.log')
+        #elif self.pidora == "19":
+        #    output = srv.execute('cat /mnt/koji/mash19/pidora-19-latest/mash.log')
+        else:
+            errors.append("mash failed unknown version of pidora")
         srv.close()
         for line in output:
             if re.search('^mash failed .*$', line):
