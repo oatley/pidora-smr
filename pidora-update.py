@@ -19,16 +19,17 @@ import os
 class tools:
     def __init__(self):
         # Default configuration values
-        self.sigulhost = "bahamas.proximity.on.ca"
-        self.mashhost = "japan.proximity.on.ca"
-        self.rsynchost = "pidora.ca"
+        self.sigulhost = ""
+        self.mashhost = ""
+        self.rsynchost = ""
         self.siguluser = ""
         self.mashuser = ""
         self.rsyncuser = ""
         self.mashdir = "/usr/local/bin/mash-pidora"
         self.kojitags18 = ['f18-updates', 'f18-rpfr-updates', 'f18-updates-testing', 'f18-rpfr-updates-testing']
-        self.kojitags19 = ['f19', 'f19-updates', 'f19-rpfr-updates', 'f19-updates-testing', 'f19-rpfr-updates-testing']
-        self.kojitags20 = ['f20', 'f20-updates', 'f20-rpfr-updates', 'f20-updates-testing', 'f20-rpfr-updates-testing']
+        self.kojitags19 = ['f19-updates', 'f19-rpfr-updates', 'f19-updates-testing', 'f19-rpfr-updates-testing']
+        self.kojitags20 = ['f20-updates', 'f20-rpfr-updates', 'f20-updates-testing', 'f20-rpfr-updates-testing', 'f20-rpfr-updates-automated']
+        self.kojitags21 = ['f21']
         self.email = "andrew.oatley-willis@senecacollege.ca"
         self.auto = False
         self.logdir = "/var/log/pidora-smr/"
@@ -108,6 +109,8 @@ class tools:
             self.kojitags = self.kojitags19
         elif opts.pidora == "20":
             self.kojitags = self.kojitags20
+        elif opts.pidora == "21":
+            self.kojitags = self.kojitags21
         else:
             print "Option pidora specifies unknown version of pidora"
             parser.print_help()
